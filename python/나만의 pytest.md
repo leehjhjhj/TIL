@@ -27,6 +27,25 @@ pythonpath = src
 - pythonpath를 직접 환경변수에 넣지 않고 pytest.ini을 사용하면 편하게 pypath를 지정할 수 있다.
 - 이런 식으로 명시하면 `module not found error` 가 발생하지 않고, 무사히 pytest가 imoprt 할 수 있다.
 
+## 날짜 Fix
+
+- `freezegun`을 사용하면 `datetime.time()`와 같은 동적 시간을 고정시킬 수 있다.
+
+```bash
+pip install freezegun
+```
+
+```python
+from freezegun import freeze_time
+import datetime
+
+@freeze_time("2024-07-18")
+def test_date():
+    assert datetime.datetime.now() == datetime.datetime(2024, 7, 18)
+```
+
+- 이렇게 freeze_time 데코레이션으로 시간을 고정시킬 수 있다.
+
 ## sqlalchemy와 곁들인 DB롤백
 
 - rollback 어노테이션만 붙이면 끝나는 Spring의 Junit과 다르게 트랜잭션을 직접 관리해주어야 한다.
