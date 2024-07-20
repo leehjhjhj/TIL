@@ -95,3 +95,9 @@ class TestMatching:
 - 하지만 앞서 탐구했듯, 한 `trasaction`에서는 하나의 commit과 rollback 만 허용되고, 이 이후에는 트랜잭션을 종료시킨다.
 - 따라서 commit이 반복적으로 이뤄지는 로직에 `with session.begin_nested():` 을 추가하여 nested trasaction을 생성한다.
 - 이렇게 되면 transaction 하나에 하나의 commit이 보장되고, 테스트를 안정적으로 할 수 있다.
+
+## DB 동기화
+
+- 개발 DB라도 데이터를 삽입 및 롤백을 하다보면 데이터가 겹칠 수 있어 테스트용 DB를 사용해야한다.
+- 띠라서 도커에 mysql을 띄우고, 개발 DB의 스키마를 사용해서 테스트DB를 만들어준다.
+- 이 때, alembic을 사용하지 않더라도 동기화를 시킬 수 있어야 했다. 따라서, 자동화 코드를 만들어 사용한다.
