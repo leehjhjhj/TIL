@@ -101,3 +101,42 @@ class TestMatching:
 - 개발 DB라도 데이터를 삽입 및 롤백을 하다보면 데이터가 겹칠 수 있어 테스트용 DB를 사용해야한다.
 - 띠라서 도커에 mysql을 띄우고, 개발 DB의 스키마를 사용해서 테스트DB를 만들어준다.
 - 이 때, alembic을 사용하지 않더라도 동기화를 시킬 수 있어야 했다. 따라서, 자동화 코드를 만들어 사용한다.
+
+```python
+SCHEMA_DUMP_FILE = 'schema.sql'
+
+def dump_schema():
+    dump_command = f"mysqldump -h {DEV_DB_HOST} -u {DEV_DB_USER} -p{DEV_DB_PASSWORD} --no-data {DEV_DB_NAME} > {SCHEMA_DUMP_FILE}"
+    subprocess.run(dump_command, shell=True, check=True)
+    print("스키마 덤프 완료")
+
+def apply_schema():
+    with open(SCHEMA_DUMP_FILE, 'r') as file:
+        schema_sql = file.read()
+
+    connection = pymysql.connect(
+        host=TEST_DB_HOST,
+        user=TEST_DB_USER,
+        password=TEST_DB_PASSWORD,
+        database=TEST_DB_NAME
+    )
+
+    try:
+        with connection.cursor() as cursor:
+            for statement in schema_sql.split(';'):
+                if statement.strip():
+                    cursor.execute(statement)
+        connection.commit()
+        print("스키마 적용 완료")
+    finally:
+        connection.close()
+
+if __name__ == "__main__":
+    dump_schema()
+    apply_schema()
+```
+
+- 코드는 간단하다. 개발 디비의 스키마를 `subprocess` 를 사용해 mysqldump 명령어로 DDL을 만든다.
+- 그리고 스키마 파일을 읽어 도커에 띄어져있는 디비에 스키마를 적용시킨다.
+- 테이블 변경이 발생했을 때 해당 스크립트만 실행하면 되기 때문에 간편하다.
+- 하지만 덤프 과정이 오래 걸려서 효율이 떨어진다면 alembic을 통해서 버전관리를 하는 것을 검토해보아야겠다.
