@@ -61,7 +61,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
 Parameters:
-  NowEnvironment:
+  Environment:
     Type: String
 
 Globals:
@@ -78,7 +78,7 @@ Resources:
   TransferFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "${NowEnvironment}-smart-transfer"
+      FunctionName: !Sub "${Environment}-test"
       CodeUri: test/
       Handler: app.lambda_handler
       Runtime: python3.9
@@ -92,12 +92,12 @@ Resources:
         SQSEvent:
           Type: SQS
           Properties:
-            Queue: !Sub '{{resolve:ssm:/smart/${NowEnvironment}/transfer-sqs-url}}'
+            Queue: !Sub '{{resolve:ssm:/example/${Environment}/sqs-url}}'
             BatchSize: 5
             Enabled: true
       Environment:
         Variables:
-          DB_URL: !Sub '{{resolve:ssm:/example/${NowEnvironment}/db-url}}'
+          DB_URL: !Sub '{{resolve:ssm:/example/${Environment}/db-url}}'
           ENV: !Ref NowEnvironment
       ...
 Outputs:
@@ -108,4 +108,69 @@ Outputs:
 - sam의 환경변수나 기타 다른 설정에 ssm parameter store의 값을 가져오려면 정책에 `SSMParameterReadPolicy`를 추가해야 한다.
 - 그리고 이것을 cloudformation의 `!Sub` 문법이나 `!Ref` 문법을 통해서 여러 곳에서 사용한다.
     - 예를 들면 `'{{resolve:ssm:/example/${NowEnvironment}/db-url}}'`은 cloudformation에서 ssm parameter store의 변수를 가져오는 문법인데, 여기에 `!Sub`를 통해서 Parameters의 `NowEnvironment` 값을 넣을 수 있다.
+    - 트리거를 설정하는 Event에서도 SQS Queue url을 `Environment`로 나눌 수 있다.
 - 참고로 아직 sam template 에서는 `SecretString` 유형의 파라미터를 불러올 수 없다.
+
+## github action과의 통합
+
+- 앞서 samconfig.toml에서 환경울 나눈 뒤, parameter overrides을 통해 template.yaml의 Parater로 값을 오버라이딩하여 개발/운영 환경에 따라서 필요한 환경변수 및 설정들을 나누는 것을 알아봤다.
+- 이제 github action을 사용해 특정 branch에 따라서 해당 branch에 push시 다른 값의 파라미터들을 적용해 CI및 CD를 할 수 있다.
+
+```yaml
+name: Deploy SAM Application
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install AWS SAM CLI
+        run: |
+          pip install aws-sam-cli
+
+      - name: Set environment
+        run: |
+          if [ ${{ github.ref }} == 'refs/heads/master' ]; then
+            echo "SAM_ENV=prod" >> $GITHUB_ENV
+          else
+            echo "SAM_ENV=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Build SAM application
+        run: |
+          sam build --config-env ${{ env.SAM_ENV }}
+
+      - name: Deploy SAM application
+        env:
+          AWS_ACCESS_KEY_ID: 
+          AWS_SECRET_ACCESS_KEY: 
+          AWS_REGION: ap-northeast-2
+        run: |
+          sam deploy --config-env ${{ env.SAM_ENV }} --no-confirm-changeset --capabilities CAPABILITY_IAM
+```
+
+- Set environment 단계에서 `${{ github.ref }}`를 통해, 해당 브랜치를 확인하고 $GITHUB_ENV에 SAM_ENV를 저장시킨다.
+- 그리고 `sam build`를 할 때 `--config-env`를 통해 저장시킨 SAM_ENV를 불러와 samconfig.toml의 특정 환경으로 sam application을 buidl한다.
+- 마찬가지로 `sam deploy`에서도 `--config-env`를 통해 samconfig.toml의 특정 환경 배포를 진행시킨다.
+
+## 결론
+
+- 여태까지 내가 설명한 과정을 그림으로 한눈에 그리면 이렇게 된다.
+
+![alt text](image/3/image.png)
+
+- 이렇게 sam을 통해서 lambda의 개발/운영 서버를 분리하면 보다 안전하게 애플리케이션을 테스트 및 운영할 수 있게 된다.
