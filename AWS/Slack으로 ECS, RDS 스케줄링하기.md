@@ -139,22 +139,34 @@ def add_aurora_read_replicas(count: int, cluster_identifier: str, instance_class
 - hot 인스턴스를 삭제하기 위해서는 `delete_db_instance`를 사용하였다.
 
 ```python
-def remove_aurora_hot_read_replicas(cluster_identifier: str) -> None:
-    rds_client = boto3.client('rds')
+def schedule_with_command(product_time_mapping, is_auto: str, commands: list[int]) -> str:
+    OPEN_TIME = product_time_mapping[commands[0]]['time']
+    AUTO = True if is_auto == "auto" else False
+    if AUTO:
+        ecs_calculated_time = auto_calculate_ecs_time(OPEN_TIME)
+        rds_calculated_time = auto_calculate_rds_time(OPEN_TIME)
 
-    response = rds_client.describe_db_clusters(DBClusterIdentifier=cluster_identifier)
-    instances = response['DBClusters'][0]['DBClusterMembers']
-    
-    for instance in instances:
-        instance_identifier = instance['DBInstanceIdentifier']
-        if instance_identifier.startswith('hot') and not instance['IsClusterWriter']:
-            response = rds_client.delete_db_instance(
-                DBInstanceIdentifier=instance_identifier,
-                SkipFinalSnapshot=True
-            )
+    ecs_request = ECSScheduleRequest(
+        target_count=commands[1],
+        schedule_name=str(product_time_mapping[commands[0]]['product_id']),
+        type="ecs",
+        start_at=ecs_calculated_time[0],
+        end_at=ecs_calculated_time[1],
+        env=os.environ.get('ENV')
+    )
+
+    ...
+
+    ecs_success, rds_success = True, True
+    ecs_success = create_eventbridge_rule(ecs_request, arn_mapping[ecs_request.type])
+
+    ...
 ```
 
-- 레플리카 이름이 'hot' 으로 시작하고, `IsClusterWriter` 가 아닐 때 해당 레플리카를 삭제하게 해주었다.
+- 해당 상품의 오픈 시간에 따라서 ECS는 10분전, RDS는 30분전에 스케일 아웃, 스케일 인은 30분 후에 되도록 `auto_calculate ~` 함수를 작성해주었다.
+- `create_eventbridge_rule`에서는 `ScheduleRequest` 객체를 받아서 스케일 아웃 시간, 스케일 인 시간에 따라서 `서비스명 + 상품이름 + end or start`으로 각각 스케줄러를 생성시켜준다.
+- 스케줄러 생성시 `ActionAfterCompletion='DELETE'`를 설정하여 완료되면 스케줄러를 삭제하게 하였다.
+
 
 ## 작동 모습
 
