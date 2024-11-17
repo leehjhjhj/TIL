@@ -158,3 +158,72 @@ Transaction 1 - Second SELECT: [{'id': 27, 'hash': 'user2', 'amount': 1000, 'sta
     - 이러한 동작은 데이터 일관성과 동시성 제어를 위한 것
         - 데이터를 업데이트하기 전에 **최신 상태**를 확인하고 싶을 때
         - 여러 트랜잭션에서 **동시에 같은 데이터를 수정하는 것을 방지**하고 싶을 때
+
+## 그렇다면 UPDATE의 WHERE절은 어떤 데이터를 볼까?
+
+- 테스트를 설계하자.
+    - user1, user2는 amount가 각각 1000원이다.
+    - 트랜잭션 1에서 user1의 amonut를 0원으로 update 한다.
+    - 트랜잭션 1이 끝나기 전에 트랜잭션 2가 시작되고 UPDATE WHERE절에서 amount가 0이면 SUCCESS로 업데이트 해준다.
+
+```python
+def transaction1():
+    with engine.connect() as conn:
+        with conn.begin():
+            print("Transaction 1 - Starting")
+            
+            # UPDATE 전 상태 확인
+            result1 = conn.execute(text("SELECT * FROM deposits WHERE hash = 'user1'"))
+            print("Transaction 1 before UPDATE:", result1.mappings().all())
+            
+            conn.execute(text("UPDATE deposits SET amount = amount - 1000 WHERE hash = 'user1'"))
+            print("Transaction 1 - UPDATE executed")
+            
+            time.sleep(3)  # transaction2에게 기회를 줌
+            
+            print("Transaction 1 - Committing")
+
+def transaction2():
+    with engine.connect() as conn:
+        with conn.begin():
+            print("Transaction 2 - Starting")
+            # amount = 0인 row의 status를 'SUCCESS'로 변경
+            conn.execute(text("UPDATE deposits SET status = 'SUCCESS' WHERE amount = 0"))
+            print("Transaction 2 - UPDATE executed")
+            
+            # 최종 상태 확인
+            result = conn.execute(text("SELECT * FROM deposits"))
+            print("Final state in Transaction 2:", result.mappings().all())
+```
+
+- 결과는 다음과 같다.
+
+```python
+Transaction 1 - Starting
+Transaction 1 before UPDATE: [{'id': 62, 'hash': 'user1', 'amount': 1000, 'status': 'PENDING'}]
+Transaction 1 - UPDATE executed
+Transaction 2 - Starting
+Transaction 1 - Committing
+Transaction 2 - UPDATE executed
+Final state in Transaction 2: [{'id': 62, 'hash': 'user1', 'amount': 0, 'status': 'SUCCESS'}, {'id': 63, 'hash': 'user2', 'amount': 1000, 'status': 'PENDING'}]
+```
+
+- 결과를 보면 트랜잭션 1이 끝나지 않고 중간에 트랜잭션 2를 시작했음에도 불구하고 트랜잭션 2의 UPDATE WHERE 절은 트랜잭션 1에서 amount가 0원이된 user1의 status를 `success` 로 잘 변경해줬다.
+- 즉, UPDATE의 WHERE 절은 repeatable read 격리수준에서도 항상 최신의 데이터를 확인하며 업데이트를 진행한다.
+- 이는 데이터 정합성 보장하기 위해서이며 현재 데이터를 기준으로 평가하고 lock을 획득함으로써 변경 충돌을 방지할 수 있기 때문이다.
+- 참고로 트랜잭션 2의 UPDATE를 진행하기 전에 몇 초간 대기하게 되는데, 이는 UPDATE는 자동으로 락을 획득하기 때문이다.
+    - UPDATE 문은 자동으로 행(row) 레벨의 배타적 락을 획득한다.
+    - UPDATE문이 실행되면
+        - WHERE 절에 매칭되는 행들에 대해 배타적 락을 획득
+        - 이 lock은 트랜잭션이 `commit` 또는 `rollback`될 때까지 유지
+    - Exclusive lock의 특징
+        - 다른 트랜잭션은 이 행을 읽을 수도 쓸 수도 없다.
+        - 즉, 다른 트랜잭션의 `SELECT FOR UPDATE`, `UPDATE`, `DELETE` 등이 차단됨
+        - 일반 SELECT는 격리 수준에 따라 동작이 다르다. Repeatable Read에서는 select은 스냅샷 이전의 데이터를 읽게 된다.
+
+## 결론
+
+1. 일반 SELECT은 MVCC를 통해 트랜잭션 시작 시점의 스냅샷을 읽음
+2. SELECT FOR UPDATE은 현재 실제 데이터를 읽고 row-level 잠금을 획득
+3. UPDATE의 WHERE절은 격리 수준과 상관없이 항상 최신 데이터를 얻음
+4. UPDATE는 자동으로 행레벨의 배타적 락을 얻음
