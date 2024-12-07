@@ -139,7 +139,7 @@ def add_aurora_read_replicas(count: int, cluster_identifier: str, instance_class
 - hot 인스턴스를 삭제하기 위해서는 `delete_db_instance`를 사용하였다.
 
 ```python
-def schedule_with_command(product_time_mapping, is_auto: str, commands: list[int]) -> str:
+def ww(product_time_mapping, is_auto: str, commands: list[int]) -> str:
     OPEN_TIME = product_time_mapping[commands[0]]['time']
     AUTO = True if is_auto == "auto" else False
     if AUTO:
