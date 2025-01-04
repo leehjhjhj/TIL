@@ -34,7 +34,7 @@ celery worker --pool=eventlet or gevent
 ## Prefetch
 
 - worker가 한 번에 가져올 수 있는 작업의 수를 제어하는 설정
-- 각 Worker Process는 설정된 Prefetch 수만큼 작업을 미리 가져옵니다.
+- 각 Worker Process는 설정된 Prefetch 수만큼 작업을 미리 가져온다.
 - 여기서 함정은 설정한 값 만큼 항상 채워있는게 아니라, 현재 배치의 모든 작업이 완료되어야만 다음 배치를 가져올 수 있다는 것이다.
 - 따라서 한 워커에 실행 길이가 각기 다른 task들이 들어온다면, 실행 시간이 짧은 task는 불필요하게 오래 기다려야 될 수도 있다.
 - 따라서 task의 성격이나 작업 길이마다 각기 다른 prefetch 설정의 워커에 배치해야 한다.
